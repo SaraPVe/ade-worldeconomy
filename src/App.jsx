@@ -139,7 +139,7 @@ const theme = {
   fontHeading: '"Playfair Display", "Georgia", serif',
 };
 
-// ─── RESET GLOBALES (LA SOLUCIÓN AL ANCHO) ──────────────────────────────────
+// ─── RESET GLOBALES ─────────────────────────────────────────────────────────
 const GlobalStyles = () => (
   <style>{`
     html, body, #root {
@@ -196,6 +196,10 @@ const initState = () => ({
   revealWelfare: false,
   globaltechWinner: "",
   trapResults: { 2: null, 5: null, 8: null },
+  initialPoints: Object.fromEntries(Object.keys(GROUPS).map((g) => [g, 0])),
+  agreementEvaluations: Object.fromEntries(
+    Object.keys(GROUPS).map((g) => [g, ""])
+  ),
 });
 
 // ─── SCORING ────────────────────────────────────────────────────────────────
@@ -207,6 +211,9 @@ const calcScores = (state) => {
     const dec = state.decisions[g];
     let gdp = 0,
       welfare = 10;
+
+    // 1) Puntos iniciales gratuitos de la profesora
+    gdp += parseFloat(state.initialPoints?.[g]) || 0;
 
     const dom = parseFloat(dec.s4.domestic) || 0;
     const ownW = parseFloat(dec.s4.ownWealthy) || 0;
@@ -232,8 +239,21 @@ const calcScores = (state) => {
       if (grp.trapType === "labour") gdp += 2;
     }
 
-    const agreementCount = parseInt(dec.p1.agreements.length) || 0;
-    gdp += agreementCount * 5;
+    // 5) Valoración manual de la profesora en lugar de puntos automáticos
+    const evaluation = state.agreementEvaluations?.[g];
+    if (evaluation === "genial") {
+      gdp += 10;
+      welfare += 5;
+    } else if (evaluation === "bien") {
+      gdp += 5;
+      welfare += 2;
+    } else if (evaluation === "regular") {
+      gdp += 2;
+      welfare += 0;
+    } else if (evaluation === "mal") {
+      gdp -= 2;
+      welfare -= 2;
+    }
 
     if (dec.s2.concession === "D") welfare += 2;
 
@@ -1390,11 +1410,6 @@ const StudentView = ({ groupId, state, dispatch, onLogout }) => {
                       >
                         <span style={{ fontSize: 16, color: theme.text }}>
                           Agreement #{i + 1}{" "}
-                          <span
-                            style={{ color: theme.textMuted, marginLeft: 12 }}
-                          >
-                            +5 GDP
-                          </span>
                         </span>
                         <button
                           onClick={() =>
@@ -2071,6 +2086,211 @@ const ProfessorDashboard = ({ state, dispatch, onLogout, userRole }) => {
           </div>
         )}
 
+        {tab === "decisions" && (
+          <div style={{ width: "100%" }}>
+            <h2 style={{ ...headingStyle, marginBottom: 40 }}>
+              Detalles de Decisiones por Grupo
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {Object.entries(GROUPS).map(([gk, g]) => {
+                const dec = state.decisions[gk];
+                return (
+                  <Card key={gk}>
+                    <div
+                      style={{
+                        fontSize: 24,
+                        fontFamily: theme.fontHeading,
+                        marginBottom: 16,
+                      }}
+                    >
+                      Grupo {gk} {g.countries.european.flag}
+                    </div>
+
+                    {/* 1) S1: Production Strategy & Puntos Gratuitos */}
+                    <div
+                      style={{
+                        padding: 16,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <h3 style={{ fontSize: 16, marginTop: 0 }}>
+                        1) Production Strategy (S1)
+                      </h3>
+                      <p>
+                        <strong>Estrategias:</strong>{" "}
+                        {JSON.stringify(dec.s1.strategies)}
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 16,
+                          marginTop: 12,
+                        }}
+                      >
+                        <label>Puntos iniciales gratuitos (Afecta GDP):</label>
+                        <input
+                          type="number"
+                          value={state.initialPoints?.[gk] || 0}
+                          onChange={(e) =>
+                            dispatch({
+                              type: "SET_INITIAL_POINTS",
+                              groupId: gk,
+                              points: Number(e.target.value),
+                            })
+                          }
+                          style={{
+                            padding: 8,
+                            borderRadius: 4,
+                            border: `1px solid ${theme.border}`,
+                            width: 100,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 2) S2: GLOBALTECH Bid */}
+                    <div
+                      style={{
+                        padding: 16,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <h3 style={{ fontSize: 16, marginTop: 0 }}>
+                        2) Bid GLOBALTECH (S2)
+                      </h3>
+                      <p>
+                        <strong>País seleccionado:</strong>{" "}
+                        {dec.s2.country || "Ninguno"}
+                      </p>
+                      <p>
+                        <strong>Concesión ofrecida:</strong>{" "}
+                        {dec.s2.concession || "Ninguna"}
+                      </p>
+                    </div>
+
+                    {/* 3) S3: Ventaja Especial */}
+                    <div
+                      style={{
+                        padding: 16,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <h3 style={{ fontSize: 16, marginTop: 0 }}>
+                        3) Ventaja Especial / Trampas (S3)
+                      </h3>
+                      {g.trap ? (
+                        <p>
+                          <strong>Tienen ventaja:</strong> Sí ({g.trapType} en{" "}
+                          {g.trapCountry}). <br />
+                          <strong>Decisión:</strong>{" "}
+                          {dec.s3.used === "yes"
+                            ? "La han usado"
+                            : dec.s3.used === "no"
+                            ? "No la han usado"
+                            : "Pendiente"}
+                        </p>
+                      ) : (
+                        <p>No disponen de ventaja especial.</p>
+                      )}
+                    </div>
+
+                    {/* 4) S4: Allocation */}
+                    <div
+                      style={{
+                        padding: 16,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <h3 style={{ fontSize: 16, marginTop: 0 }}>
+                        4) FDI Allocation (S4)
+                      </h3>
+                      <p>
+                        <strong>Doméstico:</strong> {dec.s4.domestic || 0} |{" "}
+                        <strong>Rico:</strong> {dec.s4.ownWealthy || 0} |{" "}
+                        <strong>Pobre propio:</strong> {dec.s4.ownPoor || 0} |{" "}
+                        <strong>Pobre externo:</strong> {dec.s4.otherPoor || 0}{" "}
+                        (Destino: {dec.s4.otherPoorTarget || "-"})
+                      </p>
+                    </div>
+
+                    {/* 5) P1: Valoración de Agreements */}
+                    <div
+                      style={{
+                        padding: 16,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                      }}
+                    >
+                      <h3 style={{ fontSize: 16, marginTop: 0 }}>
+                        5) Valoración Agreements y Cadena de Valor (P1)
+                      </h3>
+                      <p>
+                        <strong>Producto:</strong> {dec.p1.product || "-"}
+                      </p>
+                      <p>
+                        <strong>Notas de Cadena:</strong> {dec.p1.notes || "-"}
+                      </p>
+                      <p>
+                        <strong>Acuerdos declarados:</strong>{" "}
+                        {dec.p1.agreements.length}
+                      </p>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 16,
+                          marginTop: 12,
+                        }}
+                      >
+                        <label>Valoración (Transforma en Puntos):</label>
+                        <select
+                          value={state.agreementEvaluations?.[gk] || ""}
+                          onChange={(e) =>
+                            dispatch({
+                              type: "SET_AGREEMENT_EVALUATION",
+                              groupId: gk,
+                              evaluation: e.target.value,
+                            })
+                          }
+                          style={{
+                            padding: 8,
+                            borderRadius: 4,
+                            border: `1px solid ${theme.border}`,
+                            background: theme.surface,
+                            color: theme.text,
+                          }}
+                        >
+                          <option value="">-- Sin valorar (0 pts) --</option>
+                          <option value="genial">
+                            Genial (+10 GDP, +5 Welfare)
+                          </option>
+                          <option value="bien">
+                            Bien (+5 GDP, +2 Welfare)
+                          </option>
+                          <option value="regular">
+                            Regular (+2 GDP, +0 Welfare)
+                          </option>
+                          <option value="mal">Mal (-2 GDP, -2 Welfare)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {tab === "reveal" && (
           <div style={{ width: "100%" }}>
             <Card
@@ -2138,7 +2358,7 @@ const ProfessorDashboard = ({ state, dispatch, onLogout, userRole }) => {
           </div>
         )}
 
-        {(tab === "decisions" || tab === "globaltech" || tab === "traps") && (
+        {(tab === "globaltech" || tab === "traps") && (
           <Card style={{ textAlign: "center", padding: 80, width: "100%" }}>
             <h2 style={headingStyle}>Module '{tab}' is active.</h2>
             <p style={{ color: theme.textMuted, fontSize: 18 }}>
@@ -2178,6 +2398,24 @@ const reducer = (state, action) => {
       next = {
         ...state,
         trapResults: { ...state.trapResults, [action.groupId]: action.result },
+      };
+      break;
+    case "SET_INITIAL_POINTS":
+      next = {
+        ...state,
+        initialPoints: {
+          ...state.initialPoints,
+          [action.groupId]: action.points,
+        },
+      };
+      break;
+    case "SET_AGREEMENT_EVALUATION":
+      next = {
+        ...state,
+        agreementEvaluations: {
+          ...state.agreementEvaluations,
+          [action.groupId]: action.evaluation,
+        },
       };
       break;
     case "TOGGLE_WELFARE":
